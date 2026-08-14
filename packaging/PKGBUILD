@@ -6,7 +6,7 @@ pkgdesc="Calendar popup for Waybar, written in Rust for the Argvus desktop"
 arch=('x86_64')
 url="https://github.com/argvus/argvus-calendar"
 license=('GPL-3.0-only')
-options=('!debug')
+options=('!debug' '!lto')
 depends=(
   'gtk4'
   'gtk4-layer-shell'
@@ -40,11 +40,25 @@ prepare() {
 
 build() {
   cd "${pkgname}-${pkgver}"
+
+  export CFLAGS="${CFLAGS/-flto=auto/}"
+  export CXXFLAGS="${CXXFLAGS/-flto=auto/}"
+  export FFLAGS="${FFLAGS/-flto=auto/}"
+  export FCFLAGS="${FCFLAGS/-flto=auto/}"
+  export LDFLAGS="${LDFLAGS/-flto=auto/}"
+
   cargo build --release --locked --target-dir target
 }
 
 check() {
   cd "${pkgname}-${pkgver}"
+
+  export CFLAGS="${CFLAGS/-flto=auto/}"
+  export CXXFLAGS="${CXXFLAGS/-flto=auto/}"
+  export FFLAGS="${FFLAGS/-flto=auto/}"
+  export FCFLAGS="${FCFLAGS/-flto=auto/}"
+  export LDFLAGS="${LDFLAGS/-flto=auto/}"
+
   cargo test --locked --target-dir target
 }
 
