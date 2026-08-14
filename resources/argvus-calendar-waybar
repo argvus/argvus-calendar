@@ -1,0 +1,50 @@
+#!/usr/bin/env sh
+
+set -eu
+
+# Argvus Waybar passes coordinates from the original button event relative to
+# its layer surface. Add the layer's stable origin to obtain desktop
+# coordinates without ever reading the moving pointer.
+position=""
+if [ "${1:-}" = "--surface" ] && [ "$#" -ge 3 ] && command -v jq >/dev/null 2>&1; then
+	surface_x="$(printf '%s\n' "$2" | sed -n '/^-\{0,1\}[0-9][0-9]*$/p')"
+	surface_y="$(printf '%s\n' "$3" | sed -n '/^-\{0,1\}[0-9][0-9]*$/p')"
+	origin="$(
+		hyprctl layers -j 2>/dev/null |
+			jq -r --arg output "${WAYBAR_OUTPUT_NAME:-}" '
+				[
+					to_entries[]
+					| select($output == "" or .key == $output)
+					| .value.levels
+					| to_entries[].value[]
+					| select(.namespace == "waybar" and .w > (.h * 4))
+					| [.x, .y]
+				]
+				| first // empty
+				| @tsv
+			' 2>/dev/null ||
+			true
+	)"
+	origin_x="$(printf '%s\n' "$origin" | cut -f1)"
+	origin_y="$(printf '%s\n' "$origin" | cut -f2)"
+	origin_x="$(printf '%s\n' "$origin_x" | sed -n '/^-\{0,1\}[0-9][0-9]*$/p')"
+	origin_y="$(printf '%s\n' "$origin_y" | sed -n '/^-\{0,1\}[0-9][0-9]*$/p')"
+
+	if [ -n "$surface_x" ] && [ -n "$surface_y" ] && [ -n "$origin_x" ] && [ -n "$origin_y" ]; then
+		position="{\"x\":$((origin_x + surface_x)),\"y\":$((origin_y + surface_y))}"
+	fi
+fi
+
+# Compatibility fallback for Waybar versions without event-coordinate support.
+if [ -z "$position" ]; then
+	position="$(hyprctl cursorpos -j 2>/dev/null || true)"
+fi
+
+x="$(printf '%s' "$position" | sed -n 's/.*"x": *\(-\{0,1\}[0-9][0-9]*\).*/\1/p' || true)"
+y="$(printf '%s' "$position" | sed -n 's/.*"y": *\(-\{0,1\}[0-9][0-9]*\).*/\1/p' || true)"
+
+if [ -n "$x" ] && [ -n "$y" ]; then
+	exec argvus-calendar toggle --x "$x" --y "$y"
+fi
+
+exec argvus-calendar toggle

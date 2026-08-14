@@ -1,0 +1,11 @@
+[Unit]
+Description=Argvus Calendar reminders service
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=argvus-calendar service
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

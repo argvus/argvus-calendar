@@ -1,0 +1,82 @@
+use std::time::Duration;
+
+use crate::calendar::start_of_today_utc;
+use crate::config::{Paths, service_events_enabled};
+use crate::error::Result;
+use crate::storage::Database;
+use chrono::{Duration as ChronoDuration, Utc};
+use log::{debug, warn};
+
+use super::notify_event;
+
+pub struct ReminderScheduler {
+    paths: Paths,
+    database_path: std::path::PathBuf,
+    poll_interval: Duration,
+}
+
+impl ReminderScheduler {
+    pub fn new(paths: &Paths) -> Self {
+        Self {
+            paths: paths.clone(),
+            database_path: paths.database.clone(),
+            poll_interval: Duration::from_secs(30),
+        }
+    }
+
+    pub fn run(self) -> Result<()> {
+        loop {
+            if let Err(err) = self.tick() {
+                warn!("reminder scheduler tick failed: {err}");
+            }
+            std::thread::sleep(self.poll_interval);
+        }
+    }
+
+    pub fn tick(&self) -> Result<usize> {
+        if !service_events_enabled(&self.paths) {
+            return Ok(0);
+        }
+        let db = Database::open(&self.database_path)?;
+        db.purge_events_ended_before(start_of_today_utc())?;
+        let now = Utc::now();
+        let due = db.due_reminders(now)?;
+        let mut fired = 0;
+        for (reminder, event) in due {
+            if let Some(id) = reminder.id {
+                if !is_stale_repeat(event.start, reminder.minutes_before, now) {
+                    notify_event(&event, reminder.minutes_before)?;
+                    fired += 1;
+                }
+                db.mark_reminder_fired(id, now)?;
+            }
+        }
+        debug!("fired {fired} reminders");
+        Ok(fired)
+    }
+}
+
+fn is_stale_repeat(
+    start: chrono::DateTime<Utc>,
+    minutes_before: i64,
+    now: chrono::DateTime<Utc>,
+) -> bool {
+    let trigger = start - ChronoDuration::minutes(minutes_before);
+    minutes_before < 0 && now.signed_duration_since(trigger) > ChronoDuration::minutes(2)
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::TimeZone;
+
+    use super::*;
+
+    #[test]
+    fn old_repetitions_are_skipped_without_skipping_primary_reminders() {
+        let start = Utc.with_ymd_and_hms(2026, 8, 12, 0, 0, 0).unwrap();
+        let noon = start + ChronoDuration::hours(12);
+        assert!(is_stale_repeat(start, -120, noon));
+        assert!(!is_stale_repeat(start, -720, noon));
+        assert!(!is_stale_repeat(start, 10, noon));
+    }
+}
