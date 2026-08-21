@@ -1,6 +1,6 @@
 # Maintainer: William C. Canin
 pkgname=argvus-calendar
-pkgver=0.0.0
+pkgver=0.1.1
 pkgrel=1
 pkgdesc="Calendar popup for Waybar, written in Rust for the Argvus desktop"
 arch=('x86_64')
@@ -21,12 +21,12 @@ backup=(
   'etc/argvus-calendar/config.toml'
   'etc/argvus-calendar/style.css'
   'etc/argvus-calendar/theme.css'
-  'etc/argvus-calendar/themes/argvus-dark.css'
-  'etc/argvus-calendar/themes/argvus-dark-float.css'
+  'etc/argvus-calendar/themes/argvus-dark-aether.css'
+  'etc/argvus-calendar/themes/argvus-dark-aether-float.css'
   'etc/argvus-calendar/themes/argvus-dark-silver.css'
   'etc/argvus-calendar/themes/argvus-dark-silver-float.css'
-  'etc/argvus-calendar/themes/argvus-slate.css'
-  'etc/argvus-calendar/themes/argvus-slate-float.css'
+  'etc/argvus-calendar/themes/argvus-dark-slate.css'
+  'etc/argvus-calendar/themes/argvus-dark-slate-float.css'
 )
 source=(
   "${pkgname}-${pkgver}.tar.gz::${url}/archive/refs/tags/v${pkgver}.tar.gz"
