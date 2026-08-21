@@ -98,7 +98,7 @@ impl Default for AppearanceConfig {
 impl Default for LocaleConfig {
     fn default() -> Self {
         Self {
-            language: "en-US".to_string(),
+            language: default_language(),
         }
     }
 }
@@ -154,8 +154,13 @@ impl AppConfig {
 
     fn validate(mut config: Self) -> Self {
         config.appearance.font_size = config.appearance.font_size.clamp(8, 32);
-        if !matches!(config.locale.language.as_str(), "en-US" | "pt-BR") {
-            config.locale.language = "en-US".to_string();
+        if !matches!(
+            config.locale.language.as_str(),
+            "auto" | "en-US" | "pt-BR"
+        ) {
+            // Unknown languages follow the system locale, which itself falls
+            // back to English.
+            config.locale.language = "auto".to_string();
         }
         if !matches!(config.calendar.week_start.as_str(), "monday" | "sunday") {
             config.calendar.week_start = "monday".to_string();
@@ -173,7 +178,7 @@ fn default_font_size() -> u8 {
 }
 
 fn default_language() -> String {
-    "en-US".to_string()
+    "auto".to_string()
 }
 
 fn default_week_start() -> String {
@@ -431,7 +436,7 @@ mod tests {
             events_enabled_file: root.join("cache/events-enabled"),
         };
         let config = AppConfig::load(&paths).unwrap();
-        assert_eq!(config.locale.language, "en-US");
+        assert_eq!(config.locale.language, "auto");
         assert_eq!(config.appearance.font_size, 12);
     }
 
@@ -561,7 +566,14 @@ show_events = false
     fn unsupported_language_falls_back() {
         let mut config = AppConfig::default();
         config.locale.language = "xx-YY".to_string();
-        assert_eq!(AppConfig::validate(config).locale.language, "en-US");
+        assert_eq!(AppConfig::validate(config).locale.language, "auto");
+    }
+
+    #[test]
+    fn auto_language_is_kept() {
+        let mut config = AppConfig::default();
+        config.locale.language = "auto".to_string();
+        assert_eq!(AppConfig::validate(config).locale.language, "auto");
     }
 
     #[test]

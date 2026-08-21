@@ -11,8 +11,9 @@ font_family = "monospace"
 font_size = 12
 
 [locale]
-# Supported: en-US, pt-BR
-language = "en-US"
+# auto follows the system language (Portuguese when the system is pt-*,
+# English otherwise). Fixed values: en-US, pt-BR.
+language = "auto"
 
 [calendar]
 # monday | sunday

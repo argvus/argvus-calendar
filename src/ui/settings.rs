@@ -48,10 +48,11 @@ impl SettingsDraft {
             self.font_family
         };
         settings.appearance.font_size = self.font_size.clamp(8, 32) as u8;
-        settings.locale.language = if self.language == "pt-BR" {
-            "pt-BR"
-        } else {
-            "en-US"
+        settings.locale.language = match self.language.as_str() {
+            "pt-BR" => "pt-BR",
+            "en-US" => "en-US",
+            // Unknown values follow the system locale.
+            _ => "auto",
         }
         .to_string();
         settings.calendar.week_start = if self.week_start == "sunday" {
@@ -327,7 +328,7 @@ mod tests {
         let mut config = Settings::default();
         config.appearance.font_family = "Noto Sans".to_string();
         config.appearance.font_size = 14;
-        config.locale.language = "pt-BR".to_string();
+        config.locale.language = "auto".to_string();
         config.calendar.week_start = "sunday".to_string();
         config.calendar.default_event_duration_minutes = 90;
         config.calendar.default_reminder_minutes = 30;
@@ -337,12 +338,12 @@ mod tests {
         config.terminal.command = "foot".to_string();
         config.terminal.args = vec!["-f".to_string()];
 
-        let draft = SettingsDraft::from_config(&config, "argvus-slate", true);
+        let draft = SettingsDraft::from_config(&config, "argvus-dark-slate", true);
         let restored = draft.into_config();
 
         assert_eq!(restored.appearance.font_family, "Noto Sans");
         assert_eq!(restored.appearance.font_size, 14);
-        assert_eq!(restored.locale.language, "pt-BR");
+        assert_eq!(restored.locale.language, "auto");
         assert_eq!(restored.calendar.week_start, "sunday");
         assert!(restored.calendar.show_events);
         assert_eq!(restored.calendar.default_event_duration_minutes, 90);
@@ -352,6 +353,18 @@ mod tests {
         assert_eq!(restored.editor.args, vec!["-e", "nvim"]);
         assert_eq!(restored.terminal.command, "foot");
         assert_eq!(restored.terminal.args, vec!["-f"]);
+    }
+
+    #[test]
+    fn draft_keeps_explicit_language_override() {
+        let mut config = Settings::default();
+        config.locale.language = "pt-BR".to_string();
+        let restored = SettingsDraft::from_config(&config, "", true).into_config();
+        assert_eq!(restored.locale.language, "pt-BR");
+
+        config.locale.language = "en-US".to_string();
+        let restored = SettingsDraft::from_config(&config, "", true).into_config();
+        assert_eq!(restored.locale.language, "en-US");
     }
 
     #[test]
@@ -368,7 +381,7 @@ mod tests {
         let config = draft.into_config();
         assert_eq!(config.appearance.font_size, 32);
         assert_ne!(config.appearance.font_family, "");
-        assert_eq!(config.locale.language, "en-US");
+        assert_eq!(config.locale.language, "auto");
         assert_eq!(config.calendar.week_start, "monday");
         assert_eq!(config.editor.args, vec!["--flag", "'quoted", "value'"]);
         assert_eq!(config.calendar.sync_interval_minutes, 1);

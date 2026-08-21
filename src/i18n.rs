@@ -7,10 +7,52 @@ pub enum Language {
 }
 
 impl Language {
+    /// Resolves the configured language. The `auto` value (the default) and
+    /// unknown values follow the system locale; explicit values always win.
     pub fn resolve(configured: &str) -> Self {
         match configured {
             "pt-BR" => Self::PtBr,
-            _ => Self::EnUs,
+            "en-US" => Self::EnUs,
+            _ => Self::detect(),
+        }
+    }
+
+    /// Detects the display language from the standard locale environment.
+    /// Portuguese systems resolve to `pt-BR`; every other locale (including
+    /// missing ones) falls back to English.
+    pub fn detect() -> Self {
+        Self::detect_with(|variable| std::env::var(variable).ok())
+    }
+
+    fn detect_with(get_var: impl Fn(&str) -> Option<String>) -> Self {
+        for variable in ["LC_ALL", "LC_MESSAGES", "LANG"] {
+            let Some(value) = get_var(variable).map(|value| value.trim().to_string()) else {
+                continue;
+            };
+            if value.is_empty() {
+                continue;
+            }
+            if matches!(value.as_str(), "C" | "POSIX") {
+                return Self::EnUs;
+            }
+            return Self::from_locale_tag(&value);
+        }
+        Self::EnUs
+    }
+
+    /// Maps a locale tag such as `pt_BR.UTF-8` or `pt-BR` onto a supported
+    /// language. Anything that is not Portuguese resolves to English.
+    pub fn from_locale_tag(tag: &str) -> Self {
+        let language = tag
+            .split(['.', '@'])
+            .next()
+            .unwrap_or_default()
+            .replace('_', "-")
+            .to_lowercase();
+        if language.starts_with("pt") {
+            Self::PtBr
+        } else {
+            Self::EnUs
         }
     }
 }
@@ -273,6 +315,52 @@ mod tests {
 
     #[test]
     fn unsupported_language_falls_back_to_english() {
-        assert_eq!(Language::resolve("xx-YY"), Language::EnUs);
+        assert_eq!(Language::resolve("xx-YY"), Language::detect());
+    }
+
+    #[test]
+    fn locale_tags_map_to_supported_languages() {
+        assert_eq!(Language::from_locale_tag("pt_BR.UTF-8"), Language::PtBr);
+        assert_eq!(Language::from_locale_tag("pt-BR"), Language::PtBr);
+        assert_eq!(Language::from_locale_tag("PT"), Language::PtBr);
+        assert_eq!(Language::from_locale_tag("en_US.UTF-8"), Language::EnUs);
+        assert_eq!(Language::from_locale_tag("es_ES.UTF-8"), Language::EnUs);
+        assert_eq!(Language::from_locale_tag(""), Language::EnUs);
+    }
+
+    #[test]
+    fn auto_detection_follows_locale_precedence() {
+        fn env_of<'a>(vars: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+            move |name: &str| {
+                vars.iter()
+                    .find(|(key, _)| *key == name)
+                    .map(|(_, value)| value.to_string())
+            }
+        }
+
+        // An empty LC_ALL is treated as unset, so LANG decides.
+        assert_eq!(
+            Language::detect_with(env_of(&[("LC_ALL", ""), ("LANG", "pt_BR.UTF-8")])),
+            Language::PtBr
+        );
+        // LC_MESSAGES outranks LANG.
+        assert_eq!(
+            Language::detect_with(env_of(&[
+                ("LC_MESSAGES", "en_US.UTF-8"),
+                ("LANG", "pt_BR.UTF-8")
+            ])),
+            Language::EnUs
+        );
+        assert_eq!(
+            Language::detect_with(env_of(&[("LC_ALL", "C"), ("LANG", "pt_BR.UTF-8")])),
+            Language::EnUs
+        );
+        assert_eq!(Language::detect_with(env_of(&[])), Language::EnUs);
+    }
+
+    #[test]
+    fn explicit_language_beats_auto_detection() {
+        assert_eq!(Language::resolve("pt-BR"), Language::PtBr);
+        assert_eq!(Language::resolve("en-US"), Language::EnUs);
     }
 }

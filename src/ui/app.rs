@@ -535,7 +535,7 @@ impl SimpleComponent for AppModel {
         settings_root.append(&theme);
 
         let language_label = settings_label();
-        let language_model = gtk::StringList::new(&["en-US", "pt-BR"]);
+        let language_model = gtk::StringList::new(&["auto", "en-US", "pt-BR"]);
         let language = gtk::DropDown::new(Some(language_model.clone()), None::<gtk::Expression>);
         language.add_css_class("editor-dropdown");
         settings_root.append(&language_label);
