@@ -61,7 +61,7 @@ font_family = "monospace"
 font_size = 12 # valid range: 8-32
 
 [locale]
-language = "en-US" # en-US | pt-BR
+language = "auto" # auto (system language) | en-US | pt-BR
 
 [calendar]
 week_start = "monday" # monday | sunday
@@ -90,5 +90,6 @@ The gear button opens the same config file. The popup reloads the config on each
 - CalDAV support is implemented as a maintained internal HTTP/XML client foundation. Account management and full DB reconciliation are the next integration step.
 - Reminders are reliable when `argvus-calendar service` is running, or when installed as the provided user systemd service.
 - Provider-specific account setup, such as Google Calendar and assisted Nextcloud setup, is planned for `0.2`.
+- The `auto` language follows the operating system locale: Portuguese when the system is set to `pt-*`, English otherwise. An explicit `en-US` or `pt-BR` in the settings always wins.
 - Styling is external: `/etc/argvus-calendar/style.css` provides structure, `/etc/argvus-calendar/theme.css` provides the packaged default, `/etc/argvus-calendar/themes/` contains ARGVUS themes, and `$XDG_CACHE_HOME/argvus-calendar/theme.css` is the user-level active theme written by the ARGVUS theme switcher.
-- Supported ARGVUS themes: Dark, Dark Float, Dark Silver, Dark Silver Float, Slate and Slate Float.
+- Supported ARGVUS themes: Dark Aether, Dark Aether Float, Dark Silver, Dark Silver Float, Dark Slate, Dark Slate Float, Dark Universe, Dark Universe Float, Light Veil and Light Veil Float.
