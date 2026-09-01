@@ -5,7 +5,7 @@ use crate::config::{Paths, service_events_enabled};
 use crate::error::Result;
 use crate::storage::Database;
 use chrono::{Duration as ChronoDuration, Utc};
-use log::{debug, warn};
+use log::{debug, info, warn};
 
 use super::notify_event;
 
@@ -27,6 +27,7 @@ impl ReminderScheduler {
     pub fn run(self) -> Result<()> {
         loop {
             if let Err(err) = self.tick() {
+                eprintln!("argvus-calendar: reminder scheduler tick failed: {err}");
                 warn!("reminder scheduler tick failed: {err}");
             }
             std::thread::sleep(self.poll_interval);
@@ -40,6 +41,10 @@ impl ReminderScheduler {
         let db = Database::open(&self.database_path)?;
         db.purge_events_ended_before(start_of_today_utc())?;
         let now = Utc::now();
+        let added_start_reminders = db.ensure_start_reminders_for_unscheduled_due_events(now)?;
+        if added_start_reminders > 0 {
+            debug!("created {added_start_reminders} start reminders for unscheduled due events");
+        }
         let due = db.due_reminders(now)?;
         let mut fired = 0;
         for (reminder, event) in due {
@@ -51,7 +56,12 @@ impl ReminderScheduler {
                 db.mark_reminder_fired(id, now)?;
             }
         }
-        debug!("fired {fired} reminders");
+        if fired > 0 {
+            eprintln!("argvus-calendar: fired {fired} reminders");
+            info!("fired {fired} reminders");
+        } else {
+            debug!("fired {fired} reminders");
+        }
         Ok(fired)
     }
 }

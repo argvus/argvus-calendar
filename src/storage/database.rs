@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 use rusqlite::{Connection, params};
 
 use crate::calendar::{Calendar, CalendarEvent, CalendarSource, Reminder};
@@ -11,6 +11,8 @@ use super::migrations::{CURRENT_SCHEMA_VERSION, V1};
 pub struct Database {
     conn: Connection,
 }
+
+const MISSED_REMINDER_GRACE_MINUTES: i64 = 5;
 
 impl Database {
     pub fn open(path: &Path) -> Result<Self> {
@@ -210,6 +212,7 @@ impl Database {
     }
 
     pub fn due_reminders(&self, now: DateTime<Utc>) -> Result<Vec<(Reminder, CalendarEvent)>> {
+        let missed_since = now - Duration::minutes(MISSED_REMINDER_GRACE_MINUTES);
         let mut stmt = self.conn.prepare(
             r#"
             SELECT r.id, r.event_id, r.minutes_before, r.fired_at,
@@ -222,22 +225,49 @@ impl Database {
             WHERE e.deleted = 0
               AND r.fired_at IS NULL
               AND datetime(e.start_utc, printf('%+d minutes', -r.minutes_before)) <= datetime(?1)
-              AND datetime(e.end_utc) >= datetime(?1)
+              AND (
+                    datetime(e.end_utc) >= datetime(?1)
+                    OR datetime(e.start_utc, printf('%+d minutes', -r.minutes_before)) >= datetime(?2)
+                  )
             ORDER BY e.start_utc ASC
             "#,
         )?;
-        let rows = stmt.query_map(params![now.to_rfc3339()], |row| {
-            let reminder = Reminder {
-                id: row.get(0)?,
-                event_id: row.get(1)?,
-                minutes_before: row.get(2)?,
-                fired_at: parse_optional_datetime(row.get::<_, Option<String>>(3)?)?,
-            };
-            let event = self.event_from_offset_row(row, 4)?;
-            Ok((reminder, event))
-        })?;
+        let rows = stmt.query_map(
+            params![now.to_rfc3339(), missed_since.to_rfc3339()],
+            |row| {
+                let reminder = Reminder {
+                    id: row.get(0)?,
+                    event_id: row.get(1)?,
+                    minutes_before: row.get(2)?,
+                    fired_at: parse_optional_datetime(row.get::<_, Option<String>>(3)?)?,
+                };
+                let event = self.event_from_offset_row(row, 4)?;
+                Ok((reminder, event))
+            },
+        )?;
         rows.collect::<std::result::Result<Vec<_>, _>>()
             .map_err(Into::into)
+    }
+
+    pub fn ensure_start_reminders_for_unscheduled_due_events(
+        &self,
+        now: DateTime<Utc>,
+    ) -> Result<usize> {
+        let missed_since = now - Duration::minutes(MISSED_REMINDER_GRACE_MINUTES);
+        Ok(self.conn.execute(
+            r#"
+            INSERT OR IGNORE INTO reminders (event_id, minutes_before, fired_at)
+            SELECT e.id, 0, NULL
+            FROM events e
+            WHERE e.deleted = 0
+              AND datetime(e.start_utc) <= datetime(?1)
+              AND datetime(e.start_utc) >= datetime(?2)
+              AND NOT EXISTS (
+                    SELECT 1 FROM reminders r WHERE r.event_id = e.id
+                  )
+            "#,
+            params![now.to_rfc3339(), missed_since.to_rfc3339()],
+        )?)
     }
 
     pub fn mark_reminder_fired(&self, reminder_id: i64, when: DateTime<Utc>) -> Result<()> {
@@ -355,6 +385,78 @@ mod tests {
             .map(|(_, event)| event.title)
             .collect();
         assert_eq!(titles, vec!["Repeated", "Due"]);
+
+        drop(db);
+        std::fs::remove_dir_all(test_dir).unwrap();
+    }
+
+    #[test]
+    fn due_reminders_include_recently_missed_zero_length_events() {
+        let test_dir = std::env::temp_dir().join(format!(
+            "argvus-calendar-missed-reminders-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&test_dir).unwrap();
+        let database_path = test_dir.join("calendar.db");
+        let mut db = Database::open(&database_path).unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 8, 12, 18, 0, 30).unwrap();
+
+        let mut recent = CalendarEvent::new_local(1, "Recent", now - Duration::seconds(30));
+        recent.end = recent.start;
+        recent.reminders = vec![Reminder {
+            id: None,
+            event_id: None,
+            minutes_before: 0,
+            fired_at: None,
+        }];
+        db.upsert_event(&mut recent).unwrap();
+
+        let mut old = CalendarEvent::new_local(1, "Old", now - Duration::minutes(6));
+        old.end = old.start;
+        old.reminders = vec![Reminder {
+            id: None,
+            event_id: None,
+            minutes_before: 0,
+            fired_at: None,
+        }];
+        db.upsert_event(&mut old).unwrap();
+
+        let titles: Vec<_> = db
+            .due_reminders(now)
+            .unwrap()
+            .into_iter()
+            .map(|(_, event)| event.title)
+            .collect();
+        assert_eq!(titles, vec!["Recent"]);
+
+        drop(db);
+        std::fs::remove_dir_all(test_dir).unwrap();
+    }
+
+    #[test]
+    fn unscheduled_due_events_get_a_start_reminder() {
+        let test_dir = std::env::temp_dir().join(format!(
+            "argvus-calendar-unscheduled-reminders-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&test_dir).unwrap();
+        let database_path = test_dir.join("calendar.db");
+        let mut db = Database::open(&database_path).unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 8, 12, 18, 0, 30).unwrap();
+
+        let mut event = CalendarEvent::new_local(1, "Unscheduled", now - Duration::seconds(30));
+        event.reminders.clear();
+        db.upsert_event(&mut event).unwrap();
+
+        assert_eq!(
+            db.ensure_start_reminders_for_unscheduled_due_events(now)
+                .unwrap(),
+            1
+        );
+        let due = db.due_reminders(now).unwrap();
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].1.title, "Unscheduled");
+        assert_eq!(due[0].0.minutes_before, 0);
 
         drop(db);
         std::fs::remove_dir_all(test_dir).unwrap();

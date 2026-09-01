@@ -374,7 +374,7 @@ pub fn save_editor(
             });
         (start, end.max(start))
     };
-    let reminders = build_reminders(&draft, None, start, end);
+    let reminders = build_reminders(&draft, None, start, end, Utc::now());
     let mut event = match draft.kind {
         EditorKind::New => CalendarEvent::new_local(
             calendar_id,
@@ -411,14 +411,23 @@ fn build_reminders(
     event_id: Option<i64>,
     start: DateTime<Utc>,
     end: DateTime<Utc>,
+    now: DateTime<Utc>,
 ) -> Vec<Reminder> {
     let mut reminders = Vec::new();
     if draft.reminder_enabled {
+        let configured_minutes_before =
+            i64::from(draft.reminder_hours) * 60 + i64::from(draft.reminder_minutes);
+        let minutes_before = if configured_minutes_before > 0
+            && start - Duration::minutes(configured_minutes_before) <= now
+        {
+            0
+        } else {
+            configured_minutes_before
+        };
         reminders.push(Reminder {
             id: None,
             event_id,
-            minutes_before: i64::from(draft.reminder_hours) * 60
-                + i64::from(draft.reminder_minutes),
+            minutes_before,
             fired_at: None,
         });
     }
@@ -494,7 +503,8 @@ mod tests {
         let start = local_datetime(date, 0, 0).unwrap();
         let end = local_datetime(date.checked_add_days(Days::new(1)).unwrap(), 0, 0).unwrap();
 
-        let values: Vec<_> = build_reminders(&draft, None, start, end)
+        let now = start - Duration::hours(12);
+        let values: Vec<_> = build_reminders(&draft, None, start, end, now)
             .into_iter()
             .map(|reminder| reminder.minutes_before)
             .collect();
@@ -507,6 +517,57 @@ mod tests {
         let mut draft = EditorDraft::new(date, 10);
         draft.reminder_enabled = false;
         let start = local_datetime(date, 9, 0).unwrap();
-        assert!(build_reminders(&draft, None, start, start + Duration::hours(1)).is_empty());
+        assert!(
+            build_reminders(
+                &draft,
+                None,
+                start,
+                start + Duration::hours(1),
+                start - Duration::hours(1)
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn short_notice_events_remind_at_start_instead_of_in_the_past() {
+        let now = Utc::now();
+        let start = now + Duration::minutes(1);
+        let mut draft = EditorDraft::new(start.with_timezone(&Local).date_naive(), 10);
+        draft.reminder_hours = 0;
+        draft.reminder_minutes = 10;
+
+        let reminders = build_reminders(&draft, None, start, start + Duration::hours(1), now);
+        assert_eq!(reminders.len(), 1);
+        assert_eq!(reminders[0].minutes_before, 0);
+    }
+
+    #[test]
+    fn save_editor_persists_a_short_notice_start_reminder() {
+        let test_dir = std::env::temp_dir().join(format!(
+            "argvus-calendar-save-reminder-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&test_dir).unwrap();
+        let database_path = test_dir.join("calendar.db");
+        let local_start = Local::now() + Duration::minutes(1);
+        let local_end = local_start + Duration::hours(1);
+        let mut draft = EditorDraft::new(local_start.date_naive(), 10);
+        draft.title = "Short notice".to_string();
+        draft.start_hour = local_start.hour();
+        draft.start_minute = local_start.minute();
+        draft.end_hour = local_end.hour();
+        draft.end_minute = local_end.minute();
+
+        save_editor(&database_path, &Settings::default(), draft).unwrap();
+
+        let db = Database::open(&database_path).unwrap();
+        let events = db.all_events().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].reminders.len(), 1);
+        assert_eq!(events[0].reminders[0].minutes_before, 0);
+
+        drop(db);
+        std::fs::remove_dir_all(test_dir).unwrap();
     }
 }
