@@ -1,6 +1,8 @@
 PREFIX ?= /usr
+BRANCH := $(shell git branch --show-current 2>/dev/null || echo "unknown")
+REMOTES := $(shell git remote 2>/dev/null || echo "")
 
-.PHONY: build check install uninstall reinstall service-enable service-disable service-restart clean
+.PHONY: build check install uninstall reinstall service-enable service-disable service-restart clean push push-lease
 
 build:
 	cargo build --release --locked
@@ -30,3 +32,18 @@ service-restart:
 
 clean:
 	cargo clean
+
+# ----- GIT PUSH (development commands) -----
+push:
+	@echo "Push normal → branch: $(BRANCH)"
+	@for remote in $(REMOTES); do \
+					echo "  pushing to $$remote..."; \
+					git push $$remote $(BRANCH); \
+	done
+
+push-lease:
+	@echo "Push --force-with-lease → branch: $(BRANCH)"
+	@for remote in $(REMOTES); do \
+					echo "  pushing to $$remote..."; \
+					git push --force-with-lease $$remote $(BRANCH); \
+	done
