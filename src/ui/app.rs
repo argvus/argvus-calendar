@@ -1925,7 +1925,7 @@ fn load_day_and_month(
     let Ok(db) = Database::open(&paths.database) else {
         return (Vec::new(), HashSet::new());
     };
-    let _ = db.purge_events_ended_before(crate::calendar::start_of_today_utc());
+    let _ = db.purge_expired_local_single_events(chrono::Utc::now());
     let events = db.events_for_day(selected).unwrap_or_default();
     let first = first_of_month(month);
     let last = next_month(month)

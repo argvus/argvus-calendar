@@ -19,6 +19,7 @@ pub fn today() -> NaiveDate {
     Local::now().date_naive()
 }
 
+#[allow(dead_code)]
 pub fn start_of_local_day_utc(date: NaiveDate) -> DateTime<Utc> {
     Local
         .from_local_datetime(&date.and_hms_opt(0, 0, 0).expect("valid midnight"))
@@ -27,6 +28,7 @@ pub fn start_of_local_day_utc(date: NaiveDate) -> DateTime<Utc> {
         .with_timezone(&Utc)
 }
 
+#[allow(dead_code)]
 pub fn start_of_today_utc() -> DateTime<Utc> {
     start_of_local_day_utc(today())
 }

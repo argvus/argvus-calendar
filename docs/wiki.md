@@ -126,6 +126,8 @@ SQLite persistence (rusqlite). `Database::open(path)` runs migrations on open.
 - `mark_deleted(id)` — soft-deletes an event.
 - `purge_events_ended_before(cutoff)` — removes ended events and their
   reminders.
+- `purge_expired_local_single_events(now)` — removes local non-recurring events
+  10 minutes after their end time, preserving CalDAV/ICS and recurring events.
 - `due_reminders(now)` — reminders whose trigger time has passed and have not
   fired, joined with their events, including recently missed reminders inside a
   short grace window.
@@ -159,9 +161,9 @@ SQLite persistence (rusqlite). `Database::open(path)` runs migrations on open.
 
 - `ReminderScheduler::new(paths)` — scheduler polling every 30s.
 - `run()` — endless loop calling `tick` and sleeping.
-- `tick()` — purges ended events, creates start-time reminders for due events
-  without explicit reminders, fetches due reminders, skips stale repeat triggers
-  and fires notifications.
+- `tick()` — purges expired local non-recurring events, creates start-time
+  reminders for due events without explicit reminders, fetches due reminders,
+  skips stale repeat triggers and fires notifications.
 - `is_stale_repeat(start, minutes_before, now)` — avoids re-notifying old
   repetitions of an in-progress all-day event.
 

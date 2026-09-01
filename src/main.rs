@@ -88,7 +88,7 @@ fn main() -> Result<()> {
         }
     };
     storage::Database::open(&paths.database)?
-        .purge_events_ended_before(calendar::start_of_today_utc())?;
+        .purge_expired_local_single_events(chrono::Utc::now())?;
 
     match cli.command {
         None | Some(Command::Toggle) => {

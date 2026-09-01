@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use crate::calendar::start_of_today_utc;
 use crate::config::{Paths, service_events_enabled};
 use crate::error::Result;
 use crate::storage::Database;
@@ -39,8 +38,8 @@ impl ReminderScheduler {
             return Ok(0);
         }
         let db = Database::open(&self.database_path)?;
-        db.purge_events_ended_before(start_of_today_utc())?;
         let now = Utc::now();
+        db.purge_expired_local_single_events(now)?;
         let added_start_reminders = db.ensure_start_reminders_for_unscheduled_due_events(now)?;
         if added_start_reminders > 0 {
             debug!("created {added_start_reminders} start reminders for unscheduled due events");

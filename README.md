@@ -85,7 +85,7 @@ The gear button opens the same config file. The popup reloads the config on each
 
 - The popup is a single-instance layer-shell surface: it stays running after hiding, so `toggle`/`show`/`hide` go through a UNIX socket IPC (`$XDG_CACHE_HOME/argvus-calendar/`). Argvus Waybar supplies `{x_root}`/`{y_root}` from the original button event relative to its surface; the launcher adds the stable layer origin and forwards immutable desktop coordinates through IPC. The popup opens at that fixed X coordinate and 12 pixels below the click. It closes when you click anywhere outside it, click the date again, press Escape, or when it loses focus.
 - The experimental events section starts disabled, is controlled by the in-window toggle and is persisted in `$XDG_CACHE_HOME/argvus-calendar/events-enabled`; `show_events` remains only as a legacy/config fallback.
-- Events that ended before the current local day are permanently removed. New events cannot be created on past dates.
+- Local non-recurring events are automatically removed 10 minutes after they end. CalDAV, ICS and recurring events are preserved. New events cannot be created on past dates.
 - Events notify at their start time. Additional reminders can be configured in hours and minutes before the start; all-day events can additionally repeat their notification at a chosen interval during the day.
 - All-day events run from local midnight to the following midnight; start and end time controls are disabled while `ALL DAY` is active.
 - CalDAV support is implemented as a maintained internal HTTP/XML client foundation. Account management and full DB reconciliation are the next integration step.

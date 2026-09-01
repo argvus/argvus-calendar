@@ -12,6 +12,7 @@ pub struct Database {
     conn: Connection,
 }
 
+pub const EXPIRED_LOCAL_EVENT_GRACE_MINUTES: i64 = 10;
 const MISSED_REMINDER_GRACE_MINUTES: i64 = 5;
 
 impl Database {
@@ -204,11 +205,40 @@ impl Database {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn purge_events_ended_before(&self, cutoff: DateTime<Utc>) -> Result<usize> {
         Ok(self.conn.execute(
             "DELETE FROM events WHERE datetime(end_utc) <= datetime(?1)",
             params![cutoff.to_rfc3339()],
         )?)
+    }
+
+    pub fn purge_expired_local_single_events(&self, now: DateTime<Utc>) -> Result<usize> {
+        let cutoff = now - Duration::minutes(EXPIRED_LOCAL_EVENT_GRACE_MINUTES);
+        let mut stmt = self.conn.prepare(
+            r#"
+            SELECT id, recurrence_json
+            FROM events
+            WHERE deleted = 0
+              AND source = 'local'
+              AND datetime(end_utc) <= datetime(?1)
+            "#,
+        )?;
+        let rows = stmt.query_map(params![cutoff.to_rfc3339()], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut deleted = 0;
+        for row in rows {
+            let (id, recurrence_json) = row?;
+            let recurrence = serde_json::from_str::<crate::calendar::Recurrence>(&recurrence_json)
+                .unwrap_or_default();
+            if recurrence.is_empty() {
+                self.conn
+                    .execute("DELETE FROM events WHERE id = ?1", params![id])?;
+                deleted += 1;
+            }
+        }
+        Ok(deleted)
     }
 
     pub fn due_reminders(&self, now: DateTime<Utc>) -> Result<Vec<(Reminder, CalendarEvent)>> {
@@ -486,6 +516,73 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["Current"]
         );
+
+        drop(db);
+        std::fs::remove_dir_all(test_dir).unwrap();
+    }
+
+    #[test]
+    fn purge_expired_local_single_events_keeps_recent_remote_and_recurring_events() {
+        let test_dir =
+            std::env::temp_dir().join(format!("argvus-calendar-expire-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&test_dir).unwrap();
+        let database_path = test_dir.join("calendar.db");
+        let mut db = Database::open(&database_path).unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 8, 12, 18, 20, 0).unwrap();
+
+        let mut expired = CalendarEvent::new_local(1, "Expired local", now - Duration::hours(1));
+        expired.end = now - Duration::minutes(EXPIRED_LOCAL_EVENT_GRACE_MINUTES + 1);
+        db.upsert_event(&mut expired).unwrap();
+
+        let mut recent = CalendarEvent::new_local(1, "Recent local", now - Duration::hours(1));
+        recent.end = now - Duration::minutes(EXPIRED_LOCAL_EVENT_GRACE_MINUTES - 1);
+        db.upsert_event(&mut recent).unwrap();
+
+        let mut recurring =
+            CalendarEvent::new_local(1, "Recurring local", now - Duration::hours(1));
+        recurring.end = now - Duration::minutes(EXPIRED_LOCAL_EVENT_GRACE_MINUTES + 1);
+        recurring.recurrence.rrule = Some("FREQ=DAILY".to_string());
+        db.upsert_event(&mut recurring).unwrap();
+
+        let mut remote = CalendarEvent::new_local(1, "Remote", now - Duration::hours(1));
+        remote.end = now - Duration::minutes(EXPIRED_LOCAL_EVENT_GRACE_MINUTES + 1);
+        remote.source = CalendarSource::CalDav;
+        db.upsert_event(&mut remote).unwrap();
+
+        assert_eq!(db.purge_expired_local_single_events(now).unwrap(), 1);
+        assert_eq!(
+            db.all_events()
+                .unwrap()
+                .into_iter()
+                .map(|event| event.title)
+                .collect::<Vec<_>>(),
+            vec!["Recent local", "Recurring local", "Remote"]
+        );
+
+        drop(db);
+        std::fs::remove_dir_all(test_dir).unwrap();
+    }
+
+    #[test]
+    fn purge_expired_local_single_events_removes_all_day_after_midnight_grace() {
+        let test_dir = std::env::temp_dir().join(format!(
+            "argvus-calendar-expire-all-day-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&test_dir).unwrap();
+        let database_path = test_dir.join("calendar.db");
+        let mut db = Database::open(&database_path).unwrap();
+        let start = Utc.with_ymd_and_hms(2026, 8, 12, 0, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2026, 8, 13, 0, 0, 0).unwrap();
+        let now = end + Duration::minutes(EXPIRED_LOCAL_EVENT_GRACE_MINUTES + 1);
+
+        let mut event = CalendarEvent::new_local(1, "All day", start);
+        event.end = end;
+        event.all_day = true;
+        db.upsert_event(&mut event).unwrap();
+
+        assert_eq!(db.purge_expired_local_single_events(now).unwrap(), 1);
+        assert!(db.all_events().unwrap().is_empty());
 
         drop(db);
         std::fs::remove_dir_all(test_dir).unwrap();
