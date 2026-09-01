@@ -56,8 +56,9 @@ layered on top, so no elevated privileges are needed to persist changes.
 - `resolve_paths()` — builds `Paths` from XDG dirs (with `XDG_CONFIG_HOME` etc.
   and a user-local fallback).
 - `load_events_enabled(paths, config)` — the effective events/reminders state:
-  the cache file wins over the legacy config key.
-- `service_events_enabled(paths)` — reads the cached events/reminders state.
+  the cache file wins over the legacy config key; missing state defaults to off.
+- `service_events_enabled(paths)` — reads the cached events/reminders state and
+  defaults to off until the user explicitly enables events.
 - `save_events_enabled(paths, enabled)` — persists the state toggle.
 - `read_events_enabled(paths)` — raw cache read.
 - `open_config(paths, config)` — opens the config file in the configured editor.
@@ -126,7 +127,10 @@ SQLite persistence (rusqlite). `Database::open(path)` runs migrations on open.
 - `purge_events_ended_before(cutoff)` — removes ended events and their
   reminders.
 - `due_reminders(now)` — reminders whose trigger time has passed and have not
-  fired, joined with their events.
+  fired, joined with their events, including recently missed reminders inside a
+  short grace window.
+- `ensure_start_reminders_for_unscheduled_due_events(now)` — creates a start-time
+  reminder for due events that were saved without explicit reminders.
 - `mark_reminder_fired(id, when)` — records that a reminder fired.
 - `event_from_row` / `event_from_offset_row` / `reminders_for_event` — row
   mapping helpers.
@@ -148,14 +152,16 @@ SQLite persistence (rusqlite). `Database::open(path)` runs migrations on open.
 ### `notification.rs`
 
 - `notify_event(event, minutes_before)` — shows a desktop notification
-  (notify-rust) with a message appropriate to all-day/now/later.
+  (notify-rust) with a message appropriate to all-day/now/later and requests a
+  bell sound, with desktop audio command fallbacks.
 
 ### `scheduler.rs`
 
 - `ReminderScheduler::new(paths)` — scheduler polling every 30s.
 - `run()` — endless loop calling `tick` and sleeping.
-- `tick()` — purges ended events, fetches due reminders, skips stale repeat
-  triggers and fires notifications.
+- `tick()` — purges ended events, creates start-time reminders for due events
+  without explicit reminders, fetches due reminders, skips stale repeat triggers
+  and fires notifications.
 - `is_stale_repeat(start, minutes_before, now)` — avoids re-notifying old
   repetitions of an in-progress all-day event.
 

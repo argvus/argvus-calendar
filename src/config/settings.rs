@@ -107,7 +107,7 @@ impl Default for CalendarConfig {
     fn default() -> Self {
         Self {
             week_start: "monday".to_string(),
-            show_events: true,
+            show_events: false,
             default_event_duration_minutes: 60,
             default_reminder_minutes: 10,
             sync_interval_minutes: 15,
@@ -154,10 +154,7 @@ impl AppConfig {
 
     fn validate(mut config: Self) -> Self {
         config.appearance.font_size = config.appearance.font_size.clamp(8, 32);
-        if !matches!(
-            config.locale.language.as_str(),
-            "auto" | "en-US" | "pt-BR"
-        ) {
+        if !matches!(config.locale.language.as_str(), "auto" | "en-US" | "pt-BR") {
             // Unknown languages follow the system locale, which itself falls
             // back to English.
             config.locale.language = "auto".to_string();
@@ -186,7 +183,7 @@ fn default_week_start() -> String {
 }
 
 fn default_show_events() -> bool {
-    true
+    false
 }
 
 fn default_event_duration() -> i64 {
@@ -327,7 +324,7 @@ pub fn load_events_enabled(paths: &Paths, config: &AppConfig) -> bool {
 }
 
 pub fn service_events_enabled(paths: &Paths) -> bool {
-    read_events_enabled(paths).unwrap_or(true)
+    read_events_enabled(paths).unwrap_or(false)
 }
 
 pub fn save_events_enabled(paths: &Paths, enabled: bool) -> Result<()> {
@@ -438,6 +435,7 @@ mod tests {
         let config = AppConfig::load(&paths).unwrap();
         assert_eq!(config.locale.language, "auto");
         assert_eq!(config.appearance.font_size, 12);
+        assert!(!config.calendar.show_events);
     }
 
     #[test]
@@ -552,6 +550,18 @@ show_events = false
         assert!(paths.user_config_file.exists());
         let loaded = AppConfig::load(&paths).unwrap();
         assert_eq!(loaded.appearance.font_size, 17);
+    }
+
+    #[test]
+    fn events_are_disabled_until_explicitly_enabled() {
+        let paths = test_paths();
+        let config = AppConfig::default();
+        assert!(!load_events_enabled(&paths, &config));
+        assert!(!service_events_enabled(&paths));
+
+        save_events_enabled(&paths, true).unwrap();
+        assert!(load_events_enabled(&paths, &config));
+        assert!(service_events_enabled(&paths));
     }
 
     #[test]

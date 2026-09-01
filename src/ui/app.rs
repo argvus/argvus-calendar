@@ -550,10 +550,19 @@ impl SimpleComponent for AppModel {
         settings_root.append(&week_start);
 
         let show_events_label = settings_label();
+        let show_events_experimental = gtk::Label::new(Some(model.i18n.text(Text::Experimental)));
+        show_events_experimental.add_css_class("experimental-badge");
+        show_events_experimental
+            .set_tooltip_text(Some(model.i18n.text(Text::EventsExperimentalTooltip)));
         let show_events = gtk::Switch::new();
         show_events.add_css_class("editor-switch");
+        show_events.set_tooltip_text(Some(model.i18n.text(Text::EventsExperimentalTooltip)));
+        let show_events_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        show_events_spacer.set_hexpand(true);
         let show_events_row = editor_row();
         show_events_row.append(&show_events_label);
+        show_events_row.append(&show_events_spacer);
+        show_events_row.append(&show_events_experimental);
         show_events_row.append(&show_events);
         settings_root.append(&show_events_row);
 
@@ -1054,6 +1063,7 @@ impl SimpleComponent for AppModel {
                 week_start,
                 week_start_model,
                 show_events_label,
+                show_events_experimental,
                 show_events,
                 default_duration_label,
                 default_duration,
